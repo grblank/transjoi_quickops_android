@@ -14,7 +14,6 @@ import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Message; // Adicionar esta importação para resolver o erro
 import android.provider.MediaStore;
 import android.util.Log;
@@ -44,7 +43,10 @@ import java.io.File;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
-
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
+import java.util.HashMap;
+import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -142,6 +144,9 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private static final String APP_VERSION = "13032025"; // Defina a versão do aplicativo aqui
+    private static final String APP_VERSION_PARAM = "app_version=13032025";
+
     @RequiresApi(api = Build.VERSION_CODES.Q)
     @SuppressLint({"SetJavaScriptEnabled", "WrongViewCast"})
     @Override
@@ -224,7 +229,110 @@ public class MainActivity extends AppCompatActivity {
         cm.setAcceptThirdPartyCookies(webView, true);
         cm.acceptCookie();
 
-        webView.setWebViewClient(new Callback());
+        // Adicionar header fixo com a versão do aplicativo
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                injectCSS(view);
+                CookieManager cm = CookieManager.getInstance();
+                cm.flush();
+            }
+
+            @Override
+            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl){
+                webView.loadUrl(webview_url);
+            }
+
+            // CORREÇÃO: Reescrita da implementação do tratamento de URLs para resolver o problema de redirecionamento
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                Log.d(TAG, "Tentando carregar URL: " + url);
+
+                // Verificar se é URL externa que deve ser aberta em app nativo
+                if (url.startsWith("tel:") ||
+                        url.startsWith("whatsapp:") ||
+                        url.startsWith("mailto:") ||
+                        url.startsWith("sms:") ||
+                        url.startsWith("geo:") ||
+                        url.endsWith(".apk")) {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                    startActivity(intent);
+                    return true;
+                }
+
+                try {
+                    Uri uri = Uri.parse(url);
+                    String host = uri.getHost();
+
+                    // Se for nosso domínio, processar internamente na WebView
+                    if (host != null && host.contains("transjoi.com.br")) {
+                        Log.d(TAG, "URL interna detectada, carregando na WebView: " + url);
+                        // IMPORTANTE: Retornar false para permitir que a WebView processe a URL internamente
+                        return false;
+                    } else {
+                        // URL externa - abrir no navegador
+                        Log.d(TAG, "URL externa detectada, abrindo no navegador: " + url);
+                        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                        startActivity(intent);
+                        return true;
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Erro ao processar URL: " + e.getMessage());
+                    return false; // Em caso de erro, deixe a WebView tentar processar
+                }
+            }
+
+            // Novo método para injetar header com a versão do aplicativo, aplicado a cada requisição
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                if ("GET".equalsIgnoreCase(request.getMethod())) {
+                    String originalUrl = request.getUrl().toString();
+                    String modifiedUrl = originalUrl.contains("?")
+                            ? originalUrl + "&" + APP_VERSION_PARAM
+                            : originalUrl + "?" + APP_VERSION_PARAM;
+                    try {
+                        java.net.URL url = new java.net.URL(modifiedUrl);
+                        java.net.HttpURLConnection connection = (java.net.HttpURLConnection) url.openConnection();
+                        // Copiar os headers originais
+                        Map<String, String> originalHeaders = request.getRequestHeaders();
+                        if (originalHeaders != null) {
+                            for (Map.Entry<String, String> entry : originalHeaders.entrySet()) {
+                                connection.setRequestProperty(entry.getKey(), entry.getValue());
+                            }
+                        }
+                        // Adicionar o header "App-Version"
+                        connection.setRequestProperty("App-Version", APP_VERSION);
+                        // Adicionar os cookies para preservar a sessão
+                        String cookie = CookieManager.getInstance().getCookie(modifiedUrl);
+                        if (cookie != null) {
+                            connection.setRequestProperty("Cookie", cookie);
+                        }
+                        connection.connect();
+
+                        String contentType = connection.getContentType();
+                        String mimeType = "text/html";
+                        String encoding = "utf-8";
+                        if (contentType != null) {
+                            String[] parts = contentType.split(";");
+                            if (parts.length > 0) {
+                                mimeType = parts[0];
+                            }
+                            for (String part : parts) {
+                                part = part.trim();
+                                if (part.startsWith("charset=")) {
+                                    encoding = part.substring("charset=".length());
+                                }
+                            }
+                        }
+                        return new WebResourceResponse(mimeType, encoding, connection.getInputStream());
+                    } catch (Exception e) {
+                        Log.e(TAG, "Erro ao interceptar requisição: " + e.getMessage());
+                    }
+                }
+                return super.shouldInterceptRequest(view, request);
+            }
+        });
         webView.loadUrl(webview_url);
 
         webView.setWebChromeClient(new WebChromeClient() {
@@ -292,7 +400,8 @@ public class MainActivity extends AppCompatActivity {
                     url.startsWith("whatsapp:") ||
                     url.startsWith("mailto:") ||
                     url.startsWith("sms:") ||
-                    url.startsWith("geo:")) {
+                    url.startsWith("geo:") ||
+                    url.endsWith(".apk")) {
                 Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
                 startActivity(intent);
                 return true;
@@ -539,4 +648,53 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
+
+    // Adicionar método para instalar APK
+    private void installAPK(Uri apkUri) {
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivity(intent);
+    }
+
+    // Atualizar método shouldOverrideUrlLoading para lidar com download de APK
+    @SuppressLint("DefaultLocale")
+    private boolean shouldOverrideUrlLoading(WebView view, String url) {
+        Log.d(TAG, "Tentando carregar URL: " + url);
+
+        // Verificar se é URL externa que deve ser aberta em app nativo
+        if (url.startsWith("tel:") ||
+                url.startsWith("whatsapp:") ||
+                url.startsWith("mailto:") ||
+                url.startsWith("sms:") ||
+                url.startsWith("geo:") ||
+                url.endsWith(".apk")) {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            startActivity(intent);
+            return true;
+        }
+
+        try {
+            Uri uri = Uri.parse(url);
+            String host = uri.getHost();
+
+            // Se for nosso domínio, processar internamente na WebView
+            if (host != null && host.contains("transjoi.com.br")) {
+                Log.d(TAG, "URL interna detectada, carregando na WebView: " + url);
+                // IMPORTANTE: Retornar false para permitir que a WebView processe a URL internamente
+                return false;
+            } else {
+                // URL externa - abrir no navegador
+                Log.d(TAG, "URL externa detectada, abrindo no navegador: " + url);
+                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                startActivity(intent);
+                return true;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Erro ao processar URL: " + e.getMessage());
+            return false; // Em caso de erro, deixe a WebView tentar processar
+        }
+    }
+
 }
