@@ -3,6 +3,7 @@ package com.example.quickdevjav;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.ProgressDialog;
 import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
@@ -16,6 +17,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Message; // Adicionar esta importação para resolver o erro
 import android.provider.MediaStore;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
@@ -47,6 +49,14 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import java.util.HashMap;
 import java.util.Map;
+import android.webkit.JavascriptInterface;
+import android.os.AsyncTask;
+import org.json.JSONObject;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.io.FileOutputStream;
+import androidx.core.content.FileProvider;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -66,11 +76,59 @@ public class MainActivity extends AppCompatActivity {
     private Uri cameraImageUri = null;          // To store the camera image URI
 
     private final static int file_req_code = 1;
+    private static final int REQUEST_INSTALL_PACKAGES = 1234;
 
+    // Add WebApp interface to communicate between WebView and native code
+    public class WebAppInterface {
+        Context mContext;
+
+        WebAppInterface(Context context) {
+            mContext = context;
+        }
+
+        @JavascriptInterface
+        public void logoutDetected() {
+            // This method will be called from JavaScript when logout occurs
+            runOnUiThread(() -> {
+
+                clearWebViewData();
+                webView.loadUrl(webview_url);
+            });
+        }
+    }
+
+    // Method to clear all WebView data and cookies
+    private void clearWebViewData() {
+        // Clear all cookies
+        CookieManager.getInstance().removeAllCookies(null);
+        CookieManager.getInstance().flush();
+
+        // Clear all WebView data
+        webView.clearCache(true);
+        webView.clearHistory();
+        webView.clearFormData();
+
+        // Also clear app-specific cookies
+        android.webkit.CookieManager.getInstance().removeAllCookie();
+    }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent intent){
         super.onActivityResult(requestCode, resultCode, intent);
+
+        if (requestCode == REQUEST_INSTALL_PACKAGES) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (getPackageManager().canRequestPackageInstalls()) {
+                    Log.d(TAG, "Permissão para instalar pacotes concedida. Reiniciando instalação do APK.");
+                    // Reinicie a instalação do APK após a permissão ser concedida
+                    downloadAndInstallAPK();
+                } else {
+                    Log.e(TAG, "Permissão para instalar pacotes ainda não concedida.");
+                    Toast.makeText(this, "Permissão necessária para instalar o aplicativo.", Toast.LENGTH_LONG).show();
+                }
+            }
+            return;
+        }
 
         Uri[] results = null;
 
@@ -144,16 +202,24 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private static final String APP_VERSION = "13032025"; // Defina a versão do aplicativo aqui
-    private static final String APP_VERSION_PARAM = "app_version=13032025";
+    private static final String APP_VERSION = "27032025"; // Defina a versão do aplicativo aqui
+    private static final String APP_VERSION_PARAM = "app_version=27032025";
 
     @RequiresApi(api = Build.VERSION_CODES.Q)
     @SuppressLint({"SetJavaScriptEnabled", "WrongViewCast"})
     @Override
     protected void onCreate(Bundle savedInstanceState){
-        file_permission();
+
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        if (file_permission()) {
+            // Verificar versão do aplicativo
+            new CheckAppVersionTask().execute();
+        }
+
+
+
 
         webView = findViewById(R.id.webview);
         assert webView != null;
@@ -249,6 +315,16 @@ public class MainActivity extends AppCompatActivity {
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
                 Log.d(TAG, "Tentando carregar URL: " + url);
 
+                // Verificar se a URL contém o caminho de logout
+                if (url.contains("/logout")) {
+                    Log.d(TAG, "Logout detectado na URL: " + url);
+                    runOnUiThread(() -> {
+                        clearWebViewData();
+                        webView.loadUrl(webview_url); // Redirecionar para a página inicial
+                    });
+                    return true; // Interromper o carregamento da URL
+                }
+
                 // Verificar se é URL externa que deve ser aberta em app nativo
                 if (url.startsWith("tel:") ||
                         url.startsWith("whatsapp:") ||
@@ -268,8 +344,7 @@ public class MainActivity extends AppCompatActivity {
                     // Se for nosso domínio, processar internamente na WebView
                     if (host != null && host.contains("transjoi.com.br")) {
                         Log.d(TAG, "URL interna detectada, carregando na WebView: " + url);
-                        // IMPORTANTE: Retornar false para permitir que a WebView processe a URL internamente
-                        return false;
+                        return false; // Permitir que a WebView processe a URL internamente
                     } else {
                         // URL externa - abrir no navegador
                         Log.d(TAG, "URL externa detectada, abrindo no navegador: " + url);
@@ -368,6 +443,11 @@ public class MainActivity extends AppCompatActivity {
                 return true;
             }
         });
+
+        // Add JavaScript interface
+        webView.addJavascriptInterface(new WebAppInterface(this), "AndroidInterface");
+
+
     }
 
     /*-- callback reporting if error occurs --*/
@@ -394,6 +474,16 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, String url) {
             Log.d(TAG, "Tentando carregar URL: " + url);
+
+            // Verificar se a URL contém o caminho de logout
+            if (url.contains("/logout")) {
+                Log.d(TAG, "Logout detectado na URL: " + url);
+                runOnUiThread(() -> {
+                    clearWebViewData();
+                    webView.loadUrl(webview_url); // Redirecionar para a página inicial
+                });
+                return true; // Interromper o carregamento da URL
+            }
 
             // Verificar se é URL externa que deve ser aberta em app nativo
             if (url.startsWith("tel:") ||
@@ -606,7 +696,7 @@ public class MainActivity extends AppCompatActivity {
                 Log.d(TAG, "Solicitando permissões para Android 13+");
                 ActivityCompat.requestPermissions(MainActivity.this,
                         new String[]{Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.CAMERA}, 1);
-                return false;
+                return true;
             }
         } else {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED ||
@@ -616,7 +706,15 @@ public class MainActivity extends AppCompatActivity {
                 Log.d(TAG, "Solicitando permissões para Android < 13");
                 ActivityCompat.requestPermissions(MainActivity.this,
                         new String[]{Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.CAMERA}, 1);
-                return false;
+                return true;
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (!getPackageManager().canRequestPackageInstalls()) {
+                Log.d(TAG, "Solicitando permissão para instalar pacotes.");
+                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.REQUEST_INSTALL_PACKAGES}, 2);
+
             }
         }
 
@@ -651,11 +749,40 @@ public class MainActivity extends AppCompatActivity {
 
     // Adicionar método para instalar APK
     private void installAPK(Uri apkUri) {
-        Intent intent = new Intent(Intent.ACTION_VIEW);
-        intent.setDataAndType(apkUri, "application/vnd.android.package-archive");
-        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        startActivity(intent);
+        try {
+            Log.d(TAG, "Iniciando instalação do APK. URI: " + apkUri.toString());
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (!getPackageManager().canRequestPackageInstalls()) {
+                    Log.d(TAG, "Permissão para instalar pacotes não concedida. Solicitando permissão ao usuário.");
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName()));
+                    startActivityForResult(intent, REQUEST_INSTALL_PACKAGES);
+                    return;
+                }
+            }
+
+            Uri contentUri = FileProvider.getUriForFile(
+                    this,
+                    getApplicationContext().getPackageName() + ".fileprovider",
+                    new File(apkUri.getPath())
+            );
+
+            Log.d(TAG, "URI convertida para contentUri: " + contentUri.toString());
+
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(contentUri, "application/vnd.android.package-archive");
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            if (intent.resolveActivity(getPackageManager()) != null) {
+                Log.d(TAG, "Intent resolvida com sucesso. Iniciando Activity para instalação.");
+                startActivity(intent);
+            } else {
+                Log.e(TAG, "Nenhuma Activity encontrada para lidar com a Intent de instalação.");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Erro ao tentar instalar o APK: " + e.getMessage(), e);
+        }
     }
 
     // Atualizar método shouldOverrideUrlLoading para lidar com download de APK
@@ -697,4 +824,83 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private class CheckAppVersionTask extends AsyncTask<Void, Void, String> {
+        @Override
+        protected String doInBackground(Void... voids) {
+            try {
+                Log.e(TAG, "Verificando versao do app...");
+                URL url = new URL("https://quick.transjoi.com.br/api/appversion");
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("GET");
+                connection.connect();
+
+                InputStream inputStream = connection.getInputStream();
+                StringBuilder result = new StringBuilder();
+                int data;
+                while ((data = inputStream.read()) != -1) {
+                    result.append((char) data);
+                }
+                inputStream.close();
+                return result.toString();
+            } catch (Exception e) {
+                Log.e(TAG, "Erro ao verificar versão do aplicativo: " + e.getMessage());
+                return null; // Não exibir erro, apenas continuar
+            }
+        }
+
+        @Override
+        protected void onPostExecute(String result) {
+            if (result != null) {
+                try {
+                    JSONObject jsonObject = new JSONObject(result);
+                    String latestVersion = jsonObject.getString("version");
+                    if (!APP_VERSION.equals(latestVersion)) {
+                        Log.d(TAG, "Versão desatualizada. Iniciando download do APK atualizado.");
+                        downloadAndInstallAPK();
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Erro ao processar resposta da API: " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    private void downloadAndInstallAPK() {
+        ProgressDialog progressDialog = new ProgressDialog(this);
+        progressDialog.setMessage("Atualizando o aplicativo, por favor aguarde...");
+        progressDialog.setCancelable(false);
+        progressDialog.show();
+
+        new Thread(() -> {
+            try {
+                URL url = new URL("https://quickops.transjoi.com.br/quickops/download/atualizar.apk");
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                connection.connect();
+
+                InputStream inputStream = connection.getInputStream();
+                File apkFile = new File(getExternalFilesDir(null), "atualizar.apk");
+                FileOutputStream outputStream = new FileOutputStream(apkFile);
+
+                byte[] buffer = new byte[1024];
+                int bytesRead;
+                while ((bytesRead = inputStream.read(buffer)) != -1) {
+                    outputStream.write(buffer, 0, bytesRead);
+                }
+
+                outputStream.close();
+                inputStream.close();
+
+                runOnUiThread(() -> {
+                    progressDialog.dismiss();
+                    installAPK(Uri.fromFile(apkFile));
+                });
+            } catch (Exception e) {
+                Log.e(TAG, "Erro ao baixar APK: " + e.getMessage());
+                runOnUiThread(() -> {
+                    progressDialog.dismiss();
+                    Toast.makeText(MainActivity.this, "Erro ao atualizar o aplicativo.", Toast.LENGTH_LONG).show();
+                });
+            }
+        }).start();
+    }
 }
