@@ -202,8 +202,8 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private static final String APP_VERSION = "27032025"; // Defina a versão do aplicativo aqui
-    private static final String APP_VERSION_PARAM = "app_version=27032025";
+    private static final String APP_VERSION = "27032025_3"; // Defina a versão do aplicativo aqui
+    private static final String APP_VERSION_PARAM = "app_version=27032025_3";
 
     @RequiresApi(api = Build.VERSION_CODES.Q)
     @SuppressLint({"SetJavaScriptEnabled", "WrongViewCast"})
