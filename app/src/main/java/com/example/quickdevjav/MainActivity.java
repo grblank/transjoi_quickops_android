@@ -57,12 +57,15 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.io.FileOutputStream;
 import androidx.core.content.FileProvider;
+import com.google.zxing.integration.android.IntentIntegrator;
+import com.google.zxing.integration.android.IntentResult;
+
 
 public class MainActivity extends AppCompatActivity {
 
     /*-- CUSTOMIZE --*/
     /*-- you can customize these options for your convenience --*/
-    private static final String webview_url   = "https://quickops.transjoi.com.br/";    // web address or local file location you want to open in webview
+    private static final String webview_url   = "https://quickops.transjoi.com.br";    // web address or local file location you want to open in webview
     private static String file_type     = "image/*";    // file types to be allowed for upload
     private final boolean multiple_files      = false;         // allowing multiple file upload
 
@@ -95,6 +98,17 @@ public class MainActivity extends AppCompatActivity {
                 webView.loadUrl(webview_url);
             });
         }
+
+        @JavascriptInterface
+        public void startBarcodeScanner() {
+            IntentIntegrator integrator = new IntentIntegrator(MainActivity.this);
+            integrator.setDesiredBarcodeFormats(IntentIntegrator.ALL_CODE_TYPES);
+            integrator.setPrompt("Escanear um código de barras");
+            integrator.setCameraId(0); // Use a specific camera of the device
+            integrator.setBeepEnabled(true);
+            integrator.setBarcodeImageEnabled(false);
+            integrator.initiateScan();
+        }
     }
 
     // Method to clear all WebView data and cookies
@@ -115,6 +129,22 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent intent){
         super.onActivityResult(requestCode, resultCode, intent);
+
+        // Handle barcode scanner result
+        IntentResult result = IntentIntegrator.parseActivityResult(requestCode, resultCode, intent);
+        if (result != null) {
+            if (result.getContents() != null) {
+                // Pass scanned barcode to WebView and trigger change event
+                String barcode = result.getContents();
+                runOnUiThread(() -> webView.evaluateJavascript(
+                        "var el = document.activeElement;" +
+                                "el.value = '" + barcode + "';" +
+                                "var e = new Event('change', {bubbles: true});" +
+                                "el.dispatchEvent(e);", null));
+            } else {
+                Toast.makeText(this, "Scan canceled", Toast.LENGTH_SHORT).show();
+            }
+        }
 
         if (requestCode == REQUEST_INSTALL_PACKAGES) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -202,8 +232,8 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private static final String APP_VERSION = "27032025_3"; // Defina a versão do aplicativo aqui
-    private static final String APP_VERSION_PARAM = "app_version=27032025_3";
+    private static final String APP_VERSION = "28032025_2"; // Defina a versão do aplicativo aqui
+    private static final String APP_VERSION_PARAM = "app_version=28032025_2";
 
     @RequiresApi(api = Build.VERSION_CODES.Q)
     @SuppressLint({"SetJavaScriptEnabled", "WrongViewCast"})
