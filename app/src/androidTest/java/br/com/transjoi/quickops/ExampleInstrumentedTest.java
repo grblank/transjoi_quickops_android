@@ -1,4 +1,4 @@
-package com.example.quickdevjav;
+package br.com.transjoi.quickops;
 
 import android.content.Context;
 
@@ -21,6 +21,6 @@ public class ExampleInstrumentedTest {
     public void useAppContext() {
         // Context of the app under test.
         Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        assertEquals("com.example.quickdevjav", appContext.getPackageName());
+        assertEquals("br.com.transjoi.quickops", appContext.getPackageName());
     }
 }
