@@ -1,4 +1,4 @@
-package com.example.quickdevjav;
+package br.com.transjoi.quickops;
 
 import org.junit.Test;
 
