@@ -144,18 +144,7 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(this, "Scan canceled", Toast.LENGTH_SHORT).show();
             }
         }
-
-      
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-
-            String playStoreUrl = "https://play.google.com/store/apps/details?id=br.com.transjoi.quickops";
-                runOnUiThread(() -> {
-                    Toast.makeText(MainActivity.this, "Nova versão disponível. Atualize pela Play Store.", Toast.LENGTH_LONG).show();
-                    Intent intent2 = new Intent(Intent.ACTION_VIEW, Uri.parse(playStoreUrl));
-                    startActivity(intent2);
-                });
-        }
-        
+       
 
         Uri[] results = null;
 
