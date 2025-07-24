@@ -303,16 +303,13 @@ public class MainActivity extends AppCompatActivity {
         webSettings.setSavePassword(true);
         webSettings.setSupportMultipleWindows(false);
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+        /*if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             WebView.setWebContentsDebuggingEnabled(true);
-        }
+        }*/
 
-        // NOVO: Definir UserAgent customizado para evitar problemas de redirecionamento
+
         String defaultUserAgent = webView.getSettings().getUserAgentString();
-        //webView.getSettings().setUserAgentString(defaultUserAgent + " QuickOpsApp");
-        webView.getSettings().setUserAgentString(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        );
+        webView.getSettings().setUserAgentString(defaultUserAgent + " QuickOpsApp");
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptThirdPartyCookies(webView, true);
